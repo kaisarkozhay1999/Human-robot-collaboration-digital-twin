@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__UnityMCP__find_gameobjects",
+      "mcp__UnityMCP__manage_scene",
+      "mcp__UnityMCP__manage_gameobject",
+      "Bash(grep \"\\\\.cs$\")",
+      "mcp__UnityMCP__manage_material",
+      "mcp__UnityMCP__manage_asset"
+    ]
+  }
+}
