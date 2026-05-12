@@ -54,6 +54,12 @@ public class ER9ProFullController : MonoBehaviour
     float J4_MIN = -101f, J4_MAX = 101f;
     float J5_MIN = -368f, J5_MAX = 368f;
 
+    public float CurrentA1 => a1;
+    public float CurrentA2 => a2;
+    public float CurrentA3 => a3;
+    public float CurrentA4 => a4;
+    public float CurrentA5 => a5;
+
     void Start()
     {
         j1Start = joint1.localRotation;
