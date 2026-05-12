@@ -1,26 +1,19 @@
-using UnityEngine;
 using TMPro;
-using System.Collections;
+using UnityEngine;
 
 /// <summary>
-/// Toggleable stress analysis heat map for the ER9 Pro robot arm.
-/// 
-/// Attach to the same GameObject as ER9ProFullController.
-/// Assign the joint renderers and the toggle button label in the Inspector.
-/// 
-/// Physics model:
-///   For each joint i, static torque = sum of (mass_j * g * horizontal_distance_j)
-///   for all links j at or beyond joint i.
-///   Torque is normalised against each joint's known max rated torque,
-///   giving a 0-1 stress ratio that drives the green->yellow->red color map.
+/// Joint load visualization for the ER9 Pro robotic arm.
+///
+/// Computes a simplified static gravity load estimate from the current pose,
+/// normalizes against rated joint torque limits, and maps the result to a
+/// blue -> green -> red color gradient on the arm surfaces.
+///
+/// This is not finite-element stress analysis. It estimates static gravity
+/// loading by joint axis, which is more defensible for an interactive heatmap.
 /// </summary>
 public class StressAnalysisController : MonoBehaviour
 {
-    // ─────────────────────────────────────────────
-    // Inspector
-    // ─────────────────────────────────────────────
-
-    [Header("Joint Renderers (assign in order: base → roll)")]
+    [Header("Joint Renderers (base -> roll)")]
     public Renderer joint1Renderer;
     public Renderer joint2Renderer;
     public Renderer joint3Renderer;
@@ -30,58 +23,71 @@ public class StressAnalysisController : MonoBehaviour
 
     [Header("UI")]
     public TMP_Text stressButtonLabel;
+    public TMP_Text payloadLabel;
+    public TMP_InputField payloadInput;
 
-    [Header("Stress Labels (optional — floating text near each joint)")]
+    [Header("Stress Labels")]
     public TMP_Text stressLabel1;
     public TMP_Text stressLabel2;
     public TMP_Text stressLabel3;
     public TMP_Text stressLabel4;
     public TMP_Text stressLabel5;
 
-    [Header("ER9 Pro Physical Parameters")]
-    [Tooltip("Mass of each link in kg: [base, upper arm, forearm, wrist, end effector]")]
+    [Header("Physical Parameters")]
+    [Tooltip("Masses in kg: link1..link5")]
     public float[] linkMass = { 0.8f, 0.6f, 0.4f, 0.2f, 0.1f };
 
-    [Tooltip("Length of each link in meters: [upper arm, forearm, wrist, end effector]")]
+    [Tooltip("Lengths in meters: link1..link4")]
     public float[] linkLength = { 0.2f, 0.17f, 0.10f, 0.07f };
 
-    [Tooltip("Max rated torque per joint in Nm: [J1, J2, J3, J4, J5]")]
+    [Tooltip("Rated max torque per joint in Nm. This defines what counts as 100% load.")]
     public float[] maxTorque = { 15f, 12f, 8f, 4f, 2f };
 
-    [Header("Color Map")]
-    public Color colorLow    = Color.green;
-    public Color colorMid    = Color.yellow;
-    public Color colorHigh   = Color.red;
-    public Color colorNormal = Color.white;
+    [Header("Payload")]
+    [Tooltip("Payload mass in kg. Set via Inspector or UI buttons.")]
+    public float payloadMass = 0f;
 
-    [Header("Pulse animation on high stress")]
-    [Tooltip("Stress ratio above which the joint pulses")]
+    [Tooltip("Distance from the wrist pitch axis to the payload center of mass in meters.")]
+    public float payloadLeverArm = 0.03f;
+
+    [Tooltip("Approximate center-of-mass offset from the roll axis in meters. Keep this at 0 for a symmetric wrist/tool.")]
+    public float rollLeverArm = 0f;
+
+    [Header("Heatmap Colors")]
+    public Color colorLow = new Color(0f, 0.35f, 1f);
+    public Color colorMid = new Color(0f, 1f, 0.3f);
+    public Color colorHigh = new Color(1f, 0.15f, 0f);
+
+    [Header("Visual Settings")]
+    [Range(0f, 1f)]
+    [Tooltip("How strongly the heat color overrides the original material color. 0 = invisible, 1 = full replacement.")]
+    public float overlayStrength = 0.70f;
+
+    public float emissionStrength = 1.2f;
     public float pulseThreshold = 0.75f;
-    public float pulseSpeed     = 3f;
+    public float pulseSpeed = 3f;
 
-    // ─────────────────────────────────────────────
-    // Private State
-    // ─────────────────────────────────────────────
+    bool _stressMode;
+    readonly float[] _stressRatio = new float[5];
+    Renderer[] _renderers;
+    TMP_Text[] _labels;
 
-    bool   _stressMode  = false;
-    float[] _stressRatio = new float[5];
-
-    Renderer[]  _renderers;
-    TMP_Text[]  _labels;
-    Material[]  _originalMaterials;
-    Material[]  _stressMaterials;
+    Material[][] _originalMaterialsAll;
+    Material[][] _stressMaterialsAll;
+    Color[][] _originalColors;
+    bool[][] _shouldTint;
 
     ER9ProFullController _robot;
 
     static readonly int ColorProp = Shader.PropertyToID("_Color");
-
-    // ─────────────────────────────────────────────
-    // Unity Lifecycle
-    // ─────────────────────────────────────────────
+    static readonly int EmissionProp = Shader.PropertyToID("_EmissionColor");
+    static readonly string[] MetallicKeywords = { "titanium", "silver", "steel" };
+    static readonly string[] JointNames = { "Base", "Shoulder", "Elbow", "Pitch", "Roll" };
 
     void Awake()
     {
         _robot = GetComponent<ER9ProFullController>();
+        ValidateConfiguration();
 
         _renderers = new Renderer[]
         {
@@ -95,17 +101,49 @@ public class StressAnalysisController : MonoBehaviour
             stressLabel4, stressLabel5
         };
 
-        // Cache original materials and create per-instance stress materials
-        _originalMaterials = new Material[_renderers.Length];
-        _stressMaterials   = new Material[_renderers.Length];
+        int rendererCount = _renderers.Length;
+        _originalMaterialsAll = new Material[rendererCount][];
+        _stressMaterialsAll = new Material[rendererCount][];
+        _originalColors = new Color[rendererCount][];
+        _shouldTint = new bool[rendererCount][];
 
-        for (int i = 0; i < _renderers.Length; i++)
+        for (int i = 0; i < rendererCount; i++)
         {
             if (_renderers[i] == null) continue;
-            _originalMaterials[i] = _renderers[i].material;
-            // Instance copy so we don't modify the shared asset
-            _stressMaterials[i]   = new Material(_renderers[i].material);
+
+            Material[] materials = _renderers[i].materials;
+            int materialCount = materials.Length;
+
+            _originalMaterialsAll[i] = materials;
+            _stressMaterialsAll[i] = new Material[materialCount];
+            _originalColors[i] = new Color[materialCount];
+            _shouldTint[i] = new bool[materialCount];
+
+            for (int j = 0; j < materialCount; j++)
+            {
+                Material sourceMaterial = materials[j];
+                _stressMaterialsAll[i][j] = new Material(sourceMaterial);
+                _shouldTint[i][j] = ShouldTint(sourceMaterial);
+                _originalColors[i][j] = sourceMaterial.HasProperty(ColorProp)
+                    ? sourceMaterial.color
+                    : Color.white;
+            }
         }
+
+        if (payloadInput != null)
+            payloadInput.onEndEdit.AddListener(OnPayloadInputChanged);
+
+        HideStressLabels();
+        UpdatePayloadLabel();
+    }
+
+    void OnValidate()
+    {
+        overlayStrength = Mathf.Clamp01(overlayStrength);
+        payloadMass = Mathf.Max(0f, payloadMass);
+        payloadLeverArm = Mathf.Max(0f, payloadLeverArm);
+        rollLeverArm = Mathf.Max(0f, rollLeverArm);
+        EnsureArrayLengths();
     }
 
     void Update()
@@ -119,15 +157,42 @@ public class StressAnalysisController : MonoBehaviour
 
     void OnDestroy()
     {
-        // Clean up instanced materials
-        if (_stressMaterials != null)
-            foreach (var m in _stressMaterials)
-                if (m != null) Destroy(m);
+        if (payloadInput != null)
+            payloadInput.onEndEdit.RemoveListener(OnPayloadInputChanged);
+
+        if (_stressMaterialsAll == null) return;
+
+        foreach (Material[] materials in _stressMaterialsAll)
+        {
+            if (materials == null) continue;
+            foreach (Material material in materials)
+            {
+                if (material != null)
+                    Destroy(material);
+            }
+        }
     }
 
-    // ─────────────────────────────────────────────
-    // Toggle
-    // ─────────────────────────────────────────────
+    public void SetPayloadGrams(float grams)
+    {
+        payloadMass = Mathf.Max(0f, grams / 1000f);
+        UpdatePayloadLabel();
+        RefreshStressView();
+    }
+
+    public void SetPayloadKg(float kg)
+    {
+        payloadMass = Mathf.Max(0f, kg);
+        UpdatePayloadLabel();
+        RefreshStressView();
+    }
+
+    public void ClearPayload()
+    {
+        payloadMass = 0f;
+        UpdatePayloadLabel();
+        RefreshStressView();
+    }
 
     public void ToggleStressAnalysis()
     {
@@ -139,6 +204,7 @@ public class StressAnalysisController : MonoBehaviour
         if (_stressMode)
         {
             EnableStressMaterials();
+            RefreshStressView();
         }
         else
         {
@@ -147,183 +213,256 @@ public class StressAnalysisController : MonoBehaviour
         }
     }
 
-    // ─────────────────────────────────────────────
-    // Physics — Static Torque Model
-    // ─────────────────────────────────────────────
-
-    /// <summary>
-    /// Calculates normalised stress ratio (0–1) for each joint using
-    /// a simplified planar static torque model.
-    ///
-    /// For joint i, torque = sum over all distal links j of:
-    ///     mass[j] * g * horizontal_reach[j]
-    ///
-    /// Horizontal reach of link j depends on the cumulative joint angles
-    /// from joint i+1 outward.
-    /// </summary>
-    void CalculateStress()
+    void OnPayloadInputChanged(string value)
     {
-        // Read current smoothed joint angles from the robot controller
-        // a1=base(yaw), a2=shoulder, a3=elbow, a4=pitch, a5=roll
-        float a2 = _robot != null ? GetJointAngle(1) : 0f;  // shoulder (deg)
-        float a3 = _robot != null ? GetJointAngle(2) : 0f;  // elbow
-        float a4 = _robot != null ? GetJointAngle(3) : 0f;  // pitch
-
-        float g  = 9.81f;
-
-        // Convert to radians
-        float s2 = a2 * Mathf.Deg2Rad;
-        float s3 = a3 * Mathf.Deg2Rad;
-        float s4 = a4 * Mathf.Deg2Rad;
-
-        // Cumulative angle from vertical for each link
-        // Link 1 (upper arm): angle = shoulder angle from vertical
-        // Link 2 (forearm):   angle = shoulder + elbow
-        // Link 3 (wrist):     angle = shoulder + elbow + pitch
-        float angle1 = s2;
-        float angle2 = s2 + s3;
-        float angle3 = s2 + s3 + s4;
-
-        // Horizontal reach of each link's centre of mass
-        // (approximated as midpoint of link)
-        float l0 = linkLength.Length > 0 ? linkLength[0] : 0.20f;
-        float l1 = linkLength.Length > 1 ? linkLength[1] : 0.17f;
-        float l2 = linkLength.Length > 2 ? linkLength[2] : 0.10f;
-        float l3 = linkLength.Length > 3 ? linkLength[3] : 0.07f;
-
-        float m0 = linkMass.Length > 0 ? linkMass[0] : 0.8f;
-        float m1 = linkMass.Length > 1 ? linkMass[1] : 0.6f;
-        float m2 = linkMass.Length > 2 ? linkMass[2] : 0.4f;
-        float m3 = linkMass.Length > 3 ? linkMass[3] : 0.2f;
-        float m4 = linkMass.Length > 4 ? linkMass[4] : 0.1f;
-
-        // Reaches from J2 (shoulder) — used for torques at joints 1 and 2
-        float reach1 = Mathf.Abs(Mathf.Sin(angle1) * (l0 * 0.5f));
-        float reach2 = Mathf.Abs(Mathf.Sin(angle1) * l0 + Mathf.Sin(angle2) * (l1 * 0.5f));
-        float reach3 = Mathf.Abs(Mathf.Sin(angle1) * l0 + Mathf.Sin(angle2) * l1
-                                + Mathf.Sin(angle3) * (l2 * 0.5f));
-        float reach4 = Mathf.Abs(Mathf.Sin(angle1) * l0 + Mathf.Sin(angle2) * l1
-                                + Mathf.Sin(angle3) * l2 + Mathf.Sin(angle3) * (l3 * 0.5f));
-
-        // Reaches from J3 (elbow) — used for torque at joint 3
-        float reach2_J3 = Mathf.Abs(Mathf.Sin(angle2) * (l1 * 0.5f));
-        float reach3_J3 = Mathf.Abs(Mathf.Sin(angle2) * l1 + Mathf.Sin(angle3) * (l2 * 0.5f));
-        float reach4_J3 = Mathf.Abs(Mathf.Sin(angle2) * l1 + Mathf.Sin(angle3) * l2
-                                   + Mathf.Sin(angle3) * (l3 * 0.5f));
-
-        // Reaches from J4 (wrist pitch) — used for torque at joint 4
-        float reach3_J4 = Mathf.Abs(Mathf.Sin(angle3) * (l2 * 0.5f));
-        float reach4_J4 = Mathf.Abs(Mathf.Sin(angle3) * l2 + Mathf.Sin(angle3) * (l3 * 0.5f));
-
-        // Torque at each joint = sum of (mass * g * reach_from_that_joint) for all distal links
-        float torque1 = (m0 * g * reach1) + (m1 * g * reach2)
-                      + (m2 * g * reach3) + (m3 * g * reach4);
-        float torque2 = torque1;  // shoulder takes same load as base in this model
-        float torque3 = (m1 * g * reach2_J3) + (m2 * g * reach3_J3) + (m3 * g * reach4_J3);
-        float torque4 = (m2 * g * reach3_J4) + (m3 * g * reach4_J4);
-        float torque5 = m4 * g * 0.03f;  // roll: minimal load, just end effector
-
-        // Normalise against max rated torque
-        float max0 = maxTorque.Length > 0 ? maxTorque[0] : 15f;
-        float max1 = maxTorque.Length > 1 ? maxTorque[1] : 12f;
-        float max2 = maxTorque.Length > 2 ? maxTorque[2] :  8f;
-        float max3 = maxTorque.Length > 3 ? maxTorque[3] :  4f;
-        float max4 = maxTorque.Length > 4 ? maxTorque[4] :  2f;
-
-        _stressRatio[0] = Mathf.Clamp01(torque1 / max0);
-        _stressRatio[1] = Mathf.Clamp01(torque2 / max1);
-        _stressRatio[2] = Mathf.Clamp01(torque3 / max2);
-        _stressRatio[3] = Mathf.Clamp01(torque4 / max3);
-        _stressRatio[4] = Mathf.Clamp01(torque5 / max4);
+        if (float.TryParse(
+            value,
+            System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out float grams))
+        {
+            SetPayloadGrams(grams);
+        }
     }
 
-    // ─────────────────────────────────────────────
-    // Visuals
-    // ─────────────────────────────────────────────
+    void UpdatePayloadLabel()
+    {
+        if (payloadLabel == null) return;
+
+        payloadLabel.text = payloadMass <= 0f
+            ? "No payload"
+            : $"Payload: {payloadMass * 1000f:F0}g";
+    }
+
+    bool ShouldTint(Material material)
+    {
+        if (material == null || !material.HasProperty(ColorProp)) return false;
+
+        string materialName = material.name.ToLowerInvariant();
+        foreach (string keyword in MetallicKeywords)
+        {
+            if (materialName.Contains(keyword))
+                return false;
+        }
+
+        return true;
+    }
+
+    void CalculateStress()
+    {
+        if (_robot == null)
+        {
+            ClearStressRatios();
+            return;
+        }
+
+        float gravity = 9.81f;
+
+        float shoulderAngle = (_robot.CurrentA2 + 90f) * Mathf.Deg2Rad;
+        float elbowAngle = (_robot.CurrentA2 + _robot.CurrentA3 + 90f) * Mathf.Deg2Rad;
+        float wristAngle = (_robot.CurrentA2 + _robot.CurrentA3 + _robot.CurrentA4 + 90f) * Mathf.Deg2Rad;
+
+        float l0 = linkLength[0];
+        float l1 = linkLength[1];
+        float l2 = linkLength[2];
+        float l3 = linkLength[3];
+
+        float m0 = linkMass[0];
+        float m1 = linkMass[1];
+        float m2 = linkMass[2];
+        float m3 = linkMass[3];
+        float m4 = linkMass[4];
+        float mp = payloadMass;
+
+        float reachShoulderLink1 = Mathf.Abs(Mathf.Sin(shoulderAngle) * (l0 * 0.5f));
+        float reachShoulderLink2 = Mathf.Abs(
+            Mathf.Sin(shoulderAngle) * l0 +
+            Mathf.Sin(elbowAngle) * (l1 * 0.5f));
+        float reachShoulderLink3 = Mathf.Abs(
+            Mathf.Sin(shoulderAngle) * l0 +
+            Mathf.Sin(elbowAngle) * l1 +
+            Mathf.Sin(wristAngle) * (l2 * 0.5f));
+        float reachShoulderLink4 = Mathf.Abs(
+            Mathf.Sin(shoulderAngle) * l0 +
+            Mathf.Sin(elbowAngle) * l1 +
+            Mathf.Sin(wristAngle) * (l2 + l3 * 0.5f));
+        float reachShoulderPayload = Mathf.Abs(
+            Mathf.Sin(shoulderAngle) * l0 +
+            Mathf.Sin(elbowAngle) * l1 +
+            Mathf.Sin(wristAngle) * (l2 + l3 + payloadLeverArm));
+
+        float reachElbowLink2 = Mathf.Abs(Mathf.Sin(elbowAngle) * (l1 * 0.5f));
+        float reachElbowLink3 = Mathf.Abs(
+            Mathf.Sin(elbowAngle) * l1 +
+            Mathf.Sin(wristAngle) * (l2 * 0.5f));
+        float reachElbowLink4 = Mathf.Abs(
+            Mathf.Sin(elbowAngle) * l1 +
+            Mathf.Sin(wristAngle) * (l2 + l3 * 0.5f));
+        float reachElbowPayload = Mathf.Abs(
+            Mathf.Sin(elbowAngle) * l1 +
+            Mathf.Sin(wristAngle) * (l2 + l3 + payloadLeverArm));
+
+        float wristMassAtCom = m3 * (l3 * 0.5f) + m4 * l3 + mp * (l3 + payloadLeverArm);
+        float pitchTorque = gravity * Mathf.Abs(Mathf.Sin(wristAngle)) * wristMassAtCom;
+
+        float baseTorque = 0f;
+        float shoulderTorque =
+            m0 * gravity * reachShoulderLink1 +
+            m1 * gravity * reachShoulderLink2 +
+            m2 * gravity * reachShoulderLink3 +
+            m3 * gravity * reachShoulderLink4 +
+            m4 * gravity * reachShoulderLink4 +
+            mp * gravity * reachShoulderPayload;
+        float elbowTorque =
+            m1 * gravity * reachElbowLink2 +
+            m2 * gravity * reachElbowLink3 +
+            m3 * gravity * reachElbowLink4 +
+            m4 * gravity * reachElbowLink4 +
+            mp * gravity * reachElbowPayload;
+        float rollTorque = (m4 + mp) * gravity * rollLeverArm;
+
+        _stressRatio[0] = SafeNormalize(baseTorque, maxTorque[0], JointNames[0]);
+        _stressRatio[1] = SafeNormalize(shoulderTorque, maxTorque[1], JointNames[1]);
+        _stressRatio[2] = SafeNormalize(elbowTorque, maxTorque[2], JointNames[2]);
+        _stressRatio[3] = SafeNormalize(pitchTorque, maxTorque[3], JointNames[3]);
+        _stressRatio[4] = SafeNormalize(rollTorque, maxTorque[4], JointNames[4]);
+    }
 
     void ApplyHeatMap()
     {
-        for (int i = 0; i < 5; i++)
+        for (int i = 0; i < _renderers.Length; i++)
         {
-            if (_stressMaterials[i] == null) continue;
+            if (_renderers[i] == null || _stressMaterialsAll[i] == null) continue;
 
-            Color c = StressColor(_stressRatio[i]);
+            int ratioIndex = Mathf.Min(i, _stressRatio.Length - 1);
+            float ratio = _stressRatio[ratioIndex];
+            Color stressColor = StressColor(ratio);
 
-            // Pulse animation for high-stress joints
-            if (_stressRatio[i] >= pulseThreshold)
+            if (ratio >= pulseThreshold)
             {
                 float pulse = (Mathf.Sin(Time.time * pulseSpeed) + 1f) * 0.5f;
-                c = Color.Lerp(c, Color.white, pulse * 0.3f);
+                stressColor = Color.Lerp(stressColor, Color.white, pulse * 0.25f);
             }
 
-            _stressMaterials[i].SetColor(ColorProp, c);
-        }
+            for (int j = 0; j < _stressMaterialsAll[i].Length; j++)
+            {
+                Material material = _stressMaterialsAll[i][j];
+                if (material == null || !_shouldTint[i][j]) continue;
 
-        // Gripper inherits end-effector stress
-        if (_stressMaterials[5] != null)
-            _stressMaterials[5].SetColor(ColorProp, StressColor(_stressRatio[4]));
+                Color finalColor = Color.Lerp(
+                    _originalColors[i][j],
+                    stressColor,
+                    overlayStrength);
+
+                material.SetColor(ColorProp, finalColor);
+                material.EnableKeyword("_EMISSION");
+                material.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;
+                material.SetColor(EmissionProp, stressColor * ratio * emissionStrength);
+            }
+        }
     }
 
     Color StressColor(float ratio)
     {
-        if (ratio < 0.5f)
-            return Color.Lerp(colorLow, colorMid, ratio * 2f);
-        else
-            return Color.Lerp(colorMid, colorHigh, (ratio - 0.5f) * 2f);
+        return ratio < 0.5f
+            ? Color.Lerp(colorLow, colorMid, ratio * 2f)
+            : Color.Lerp(colorMid, colorHigh, (ratio - 0.5f) * 2f);
     }
 
     void UpdateStressLabels()
     {
-        string[] names = { "Base", "Shoulder", "Elbow", "Pitch", "Roll" };
-        for (int i = 0; i < 5; i++)
+        for (int i = 0; i < _labels.Length; i++)
         {
             if (_labels[i] == null) continue;
-            int pct = Mathf.RoundToInt(_stressRatio[i] * 100f);
-            _labels[i].text     = $"{names[i]}\n{pct}%";
-            _labels[i].color    = StressColor(_stressRatio[i]);
+
+            int percent = Mathf.RoundToInt(_stressRatio[i] * 100f);
+            _labels[i].text = $"{JointNames[i]}\n{percent}%";
+            _labels[i].color = StressColor(_stressRatio[i]);
             _labels[i].gameObject.SetActive(true);
         }
     }
 
     void HideStressLabels()
     {
-        foreach (var label in _labels)
-            if (label != null) label.gameObject.SetActive(false);
+        if (_labels == null) return;
+
+        foreach (TMP_Text label in _labels)
+        {
+            if (label != null)
+                label.gameObject.SetActive(false);
+        }
     }
 
     void EnableStressMaterials()
     {
         for (int i = 0; i < _renderers.Length; i++)
-            if (_renderers[i] != null && _stressMaterials[i] != null)
-                _renderers[i].material = _stressMaterials[i];
+        {
+            if (_renderers[i] != null && _stressMaterialsAll[i] != null)
+                _renderers[i].materials = _stressMaterialsAll[i];
+        }
     }
 
     void RestoreOriginalMaterials()
     {
         for (int i = 0; i < _renderers.Length; i++)
-            if (_renderers[i] != null && _originalMaterials[i] != null)
-                _renderers[i].material = _originalMaterials[i];
+        {
+            if (_renderers[i] != null && _originalMaterialsAll[i] != null)
+                _renderers[i].materials = _originalMaterialsAll[i];
+        }
     }
 
-    // ─────────────────────────────────────────────
-    // Helpers
-    // ─────────────────────────────────────────────
-
-    /// <summary>
-    /// Reads the current smoothed angle from ER9ProFullController
-    /// via reflection so we don't need to make private fields public.
-    /// jointIndex: 0=a1(base), 1=a2(shoulder), 2=a3(elbow), 3=a4(pitch), 4=a5(roll)
-    /// </summary>
-    float GetJointAngle(int jointIndex)
+    void RefreshStressView()
     {
-        if (_robot == null) return 0f;
+        if (!_stressMode) return;
 
-        // Access private fields via reflection
-        var field = typeof(ER9ProFullController).GetField(
-            $"a{jointIndex + 1}",
-            System.Reflection.BindingFlags.NonPublic |
-            System.Reflection.BindingFlags.Instance
-        );
-        return field != null ? (float)field.GetValue(_robot) : 0f;
+        CalculateStress();
+        ApplyHeatMap();
+        UpdateStressLabels();
+    }
+
+    void ValidateConfiguration()
+    {
+        EnsureArrayLengths();
+
+        if (_robot == null)
+            Debug.LogWarning("[Stress] ER9ProFullController is required on the same GameObject.");
+    }
+
+    void EnsureArrayLengths()
+    {
+        EnsureArraySize(ref linkMass, 5, new float[] { 0.8f, 0.6f, 0.4f, 0.2f, 0.1f });
+        EnsureArraySize(ref linkLength, 4, new float[] { 0.2f, 0.17f, 0.10f, 0.07f });
+        EnsureArraySize(ref maxTorque, 5, new float[] { 15f, 12f, 8f, 4f, 2f });
+    }
+
+    void EnsureArraySize(ref float[] values, int expectedLength, float[] fallback)
+    {
+        if (values != null && values.Length == expectedLength) return;
+
+        float[] resized = new float[expectedLength];
+        for (int i = 0; i < expectedLength; i++)
+        {
+            bool useExistingValue = values != null && i < values.Length;
+            resized[i] = useExistingValue ? values[i] : fallback[i];
+        }
+
+        values = resized;
+    }
+
+    void ClearStressRatios()
+    {
+        for (int i = 0; i < _stressRatio.Length; i++)
+            _stressRatio[i] = 0f;
+    }
+
+    float SafeNormalize(float torque, float ratedTorque, string jointName)
+    {
+        if (ratedTorque <= 0f)
+        {
+            Debug.LogWarning($"[Stress] Rated torque for {jointName} must be greater than zero.");
+            return 0f;
+        }
+
+        return Mathf.Clamp01(torque / ratedTorque);
     }
 }
