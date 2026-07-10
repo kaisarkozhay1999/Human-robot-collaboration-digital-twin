@@ -16,6 +16,9 @@ python/
 
 kinematics_reference/
   DT/                   Standalone/reference kinematics layer, tests, docs, and config
+
+examples/
+  videos/               Demonstration videos of the Unity and HoloLens workflows
 ```
 
 Generated Unity caches, builds, Python virtual environments, captured datasets, large metrics logs, and camera image dumps are intentionally excluded.
@@ -92,6 +95,17 @@ The included default model files are:
 - `yolov8n-pose.pt`
 - `yolo26n.pt`
 - `runs/detect/robot_detector/weights/best.pt`
+
+## Demonstration Videos
+
+Example videos are included in:
+
+```text
+examples/videos/
+```
+
+- `demonstration_1_unity.mp4`: Unity view showing the robot, human pose, cameras, and calibration elements cooperating to create the digital twin.
+- `demonstration_2_hololens.mp4`: HoloLens recording of the mixed-reality digital twin experience.
 
 ## Calibration And Robot Dimensions
 
