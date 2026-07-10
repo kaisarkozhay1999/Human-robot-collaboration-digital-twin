@@ -1,0 +1,45 @@
+# Unity generated files
+unity/Library/
+unity/Temp/
+unity/Obj/
+unity/Logs/
+unity/UserSettings/
+unity/Build/
+unity/Builds/
+unity/MemoryCaptures/
+unity/*.csproj
+unity/*.sln
+unity/*.user
+unity/*.tmp
+unity/.vs/
+
+# Python generated files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+python/.venv/
+python/yolo_pose_test/venv/
+
+# Captured datasets and generated experiment output
+python/yolo_pose_test/robot_dataset/
+python/yolo_pose_test/metrics/
+python/yolo_pose_test/metrics_report/
+python/yolo_pose_test/camera_accuracy/
+python/yolo_pose_test/charuco_pairs/
+python/yolo_pose_test/charuco_live_pairs*/
+python/yolo_pose_test/aruco_camera_pose_debug/
+python/yolo_pose_test/real_marker_layout_debug/
+python/yolo_pose_test/runs/**
+!python/yolo_pose_test/runs/
+!python/yolo_pose_test/runs/detect/
+!python/yolo_pose_test/runs/detect/robot_detector/
+!python/yolo_pose_test/runs/detect/robot_detector/args.yaml
+!python/yolo_pose_test/runs/detect/robot_detector/weights/
+!python/yolo_pose_test/runs/detect/robot_detector/weights/best.pt
+
+# Local machine files
+.DS_Store
+Thumbs.db
+*.log
