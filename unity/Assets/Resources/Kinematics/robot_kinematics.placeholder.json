@@ -1,0 +1,47 @@
+{
+  "_comment": "Calibrated from fk_safety_20260627_212333 against Unity TCP marker Joint 6. This is an empirical planar FK fit for the Unity digital twin; re-run calibration if the marker, robot scale, or joint zero convention changes.",
+  "modelName": "ER9Pro_calibrated_5link_planar_20260627",
+  "units": "meters_degrees",
+  "basePositionMeters": {
+    "x": 0.0,
+    "y": 0.0,
+    "z": 0.0
+  },
+  "horizontalAxis": {
+    "x": 0.315535,
+    "y": 0.944675,
+    "z": -0.089592
+  },
+  "verticalAxis": {
+    "x": 0.637409,
+    "y": -0.770331,
+    "z": -0.017308
+  },
+  "links": [
+    {
+      "name": "Base_to_shoulder_calibrated",
+      "linkLengthMeters": 0.130248,
+      "jointOffsetDegrees": -51.237877
+    },
+    {
+      "name": "Shoulder_to_elbow_calibrated",
+      "linkLengthMeters": 0.013049,
+      "jointOffsetDegrees": 80.512719
+    },
+    {
+      "name": "Elbow_to_wrist_pitch_calibrated",
+      "linkLengthMeters": 0.036949,
+      "jointOffsetDegrees": -4.241506
+    },
+    {
+      "name": "Wrist_pitch_to_roll_calibrated",
+      "linkLengthMeters": 0.077613,
+      "jointOffsetDegrees": 34.574345
+    },
+    {
+      "name": "Roll_to_tcp_calibrated",
+      "linkLengthMeters": 0.030883,
+      "jointOffsetDegrees": 114.459221
+    }
+  ]
+}
