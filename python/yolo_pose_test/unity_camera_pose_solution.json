@@ -1,0 +1,56 @@
+{
+  "timestamp": 1779364568.1264005,
+  "calibration": "C:\\Users\\bakbe\\OneDrive\\Desktop\\LabDigitalTwin\\yolo_pose_test\\stereo_calibration_charuco_refined.npz",
+  "unity_marker_corners": "C:\\Users\\bakbe\\OneDrive\\Desktop\\LabDigitalTwin\\yolo_pose_test\\unity_marker_corners_current.json",
+  "high_frame_size": [2592, 1944],
+  "live_frame_size": [1280, 720],
+  "detected_high": {
+    "cam1_ids": [0, 1],
+    "cam2_ids": [0, 1, 2, 3]
+  },
+  "cameras": {
+    "cam1": {
+      "name": "cam1",
+      "success": true,
+      "used_marker_ids": [0, 1],
+      "marker_corner_order_choices": {"0": 1, "1": 3},
+      "corner_count": 8,
+      "position": [-0.4016249566276613, 0.2855142463127045, 2.864391615255399],
+      "right": [-0.2995345965258588, 0.2454151955534952, -0.9219817825074044],
+      "up": [0.36258381658703126, 0.9231296823428828, 0.12792406156275107],
+      "forward": [0.8825032585964049, -0.2959779913591011, -0.36549285519385843],
+      "world_cv_to_camera_cv_rotation": [
+        [-0.29953459652585873, -0.24541519555349517, -0.9219817825074043],
+        [-0.36258381658703115, 0.9231296823428825, -0.12792406156275102],
+        [0.8825032585964049, 0.2959779913591011, -0.36549285519385843]
+      ],
+      "world_cv_to_camera_cv_translation": [2.450546783302113, 0.4843685752221156, 1.4858559359386367],
+      "mean_reprojection_error_px": 7.2780476449235625,
+      "max_reprojection_error_px": 12.05590982206454
+    },
+    "cam2": {
+      "name": "cam2",
+      "success": true,
+      "used_marker_ids": [0, 1, 2, 3],
+      "marker_corner_order_choices": {"0": 1, "1": 7, "2": 1, "3": 3},
+      "corner_count": 16,
+      "position": [-0.3123297528511684, -0.33252792845357004, 3.177073634911533],
+      "right": [-0.9451070289975178, 0.26242390036198754, -0.19469566060466456],
+      "up": [-0.013856719783852932, -0.6274865114151688, -0.7785041228592519],
+      "forward": [-0.3264669892291055, -0.7330718754056952, 0.5966782469915088],
+      "world_cv_to_camera_cv_rotation": [
+        [-0.9451070289975178, -0.26242390036198754, -0.19469566060466456],
+        [0.01385671978385293, -0.6274865114151686, 0.7785041228592517],
+        [-0.32646698922910544, 0.7330718754056951, 0.5966782469915087]
+      ],
+      "world_cv_to_camera_cv_translation": [0.41064068131814513, -2.260380267767197, -2.2414229532381764],
+      "mean_reprojection_error_px": 30.24009867186802,
+      "max_reprojection_error_px": 76.56725535633528
+    }
+  },
+  "real_to_unity_scale": 0.12958542722875135,
+  "debug_images": {
+    "cam1": "yolo_pose_test\\aruco_camera_pose_debug\\cam1_high_detected.png",
+    "cam2": "yolo_pose_test\\aruco_camera_pose_debug\\cam2_high_detected.png"
+  }
+}
