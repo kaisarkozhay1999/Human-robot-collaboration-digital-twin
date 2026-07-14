@@ -66,6 +66,16 @@ sysinfo.txt
 # Mono auto generated files
 mono_crash.*
 
+# Python/local experiment artifacts
+__pycache__/
+*.py[cod]
+/analysis_outputs/
+/data/
+/yolo_pose_test/
+/build1/
+/New folder/
+/*.mp4
+
 # Builds
 *.apk
 *.aab
