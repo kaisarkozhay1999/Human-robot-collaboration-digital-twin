@@ -1,0 +1,37 @@
+{
+  "_comment": "Placeholder SCORBOT/ER9Pro-style 3-link planar model. Replace linkLengthMeters and jointOffsetDegrees with measured dimensions or verified DH/model parameters before using results as final experimental data.",
+  "modelName": "SCORBOT_ER9Pro_placeholder_3link_planar",
+  "units": "meters_degrees",
+  "basePositionMeters": {
+    "x": 0.0,
+    "y": 0.0,
+    "z": 0.0
+  },
+  "horizontalAxis": {
+    "x": 1.0,
+    "y": 0.0,
+    "z": 0.0
+  },
+  "verticalAxis": {
+    "x": 0.0,
+    "y": 1.0,
+    "z": 0.0
+  },
+  "links": [
+    {
+      "name": "Link1_placeholder",
+      "linkLengthMeters": 0.25,
+      "jointOffsetDegrees": 0.0
+    },
+    {
+      "name": "Link2_placeholder",
+      "linkLengthMeters": 0.20,
+      "jointOffsetDegrees": 0.0
+    },
+    {
+      "name": "Link3_placeholder",
+      "linkLengthMeters": 0.15,
+      "jointOffsetDegrees": 0.0
+    }
+  ]
+}

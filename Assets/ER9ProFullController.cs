@@ -1,5 +1,6 @@
 using UnityEngine;
 using TMPro;
+using System.Threading;
 using System.Text;
 using uPLibrary.Networking.M2Mqtt;
 using uPLibrary.Networking.M2Mqtt.Messages;
@@ -26,11 +27,22 @@ public class ER9ProFullController : MonoBehaviour
     public float manualSpeed = 60f;
 
     [Header("MQTT")]
-    public string brokerIP = "192.168.0.190";
+    public string brokerIP = "192.168.0.248";
     public string stateTopic = "robot/state";
     public string controlTopic = "robot/control";
 
     MqttClient client;
+    int mqttConnecting;
+    float nextMqttWarningTime;
+    static readonly string[] StopAllCommands =
+    {
+        "STOP_ALL",
+        "J1_STOP",
+        "J2_STOP",
+        "J3_STOP",
+        "J4_STOP",
+        "J5_STOP"
+    };
 
     float a1, a2, a3, a4, a5, g;
     float targetA1, targetA2, targetA3, targetA4, targetA5, targetG;
@@ -59,6 +71,9 @@ public class ER9ProFullController : MonoBehaviour
     public float CurrentA3 => a3;
     public float CurrentA4 => a4;
     public float CurrentA5 => a5;
+    public float LastRobotStateTelemetryTime { get; private set; } = float.NegativeInfinity;
+
+    private volatile bool receivedRobotTelemetrySinceLastUpdate;
 
     void Start()
     {
@@ -75,33 +90,59 @@ public class ER9ProFullController : MonoBehaviour
 
     void ConnectMQTT()
     {
-        try
+        if (client != null && client.IsConnected)
+            return;
+
+        if (Interlocked.Exchange(ref mqttConnecting, 1) != 0)
+            return;
+
+        ThreadPool.QueueUserWorkItem(_ =>
         {
-            client = new MqttClient(brokerIP);
-            client.MqttMsgPublishReceived += OnMessageReceived;
-
-            string clientId = System.Guid.NewGuid().ToString();
-            client.Connect(clientId);
-
-            client.Subscribe(new string[] { stateTopic }, new byte[] { 0 });
-
-            Debug.Log("MQTT Connected");
-        }
-        catch (System.Exception e)
-        {
-            Debug.Log("MQTT ERROR: " + e.Message);
-        }
+            try
+            {
+                MqttClient candidate = new MqttClient(brokerIP);
+                candidate.MqttMsgPublishReceived += OnMessageReceived;
+                string clientId = System.Guid.NewGuid().ToString();
+                candidate.Connect(clientId);
+                candidate.Subscribe(new string[] { stateTopic }, new byte[] { 0 });
+                client = candidate;
+                Debug.Log("ER9Pro MQTT connected to " + brokerIP);
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning("ER9Pro MQTT connection failed: " + ex.Message);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref mqttConnecting, 0);
+            }
+        });
     }
 
-    void SendCommand(string msg)
+    void SendCommand(string msg, bool force = false)
     {
-        if (Time.time - lastSendTime < 0.1f) return;
+        if (string.IsNullOrWhiteSpace(msg))
+            return;
+
+        if (!force && Time.time - lastSendTime < 0.1f)
+            return;
 
         if (client != null && client.IsConnected)
         {
             client.Publish(controlTopic, Encoding.UTF8.GetBytes(msg));
             lastSendTime = Time.time;
+            if (msg == "STOP_ALL")
+                Debug.Log("ER9Pro MQTT published: " + msg + " -> " + controlTopic);
+            return;
         }
+
+        if (Time.time >= nextMqttWarningTime)
+        {
+            Debug.LogWarning("ER9Pro MQTT not connected; skipped command: " + msg);
+            nextMqttWarningTime = Time.time + 1f;
+        }
+
+        ConnectMQTT();
     }
 
     void OnMessageReceived(object sender, MqttMsgPublishEventArgs e)
@@ -118,11 +159,18 @@ public class ER9ProFullController : MonoBehaviour
             targetA4 = float.Parse(values[3]);
             targetA5 = float.Parse(values[4]);
             targetG  = float.Parse(values[5]);
+            receivedRobotTelemetrySinceLastUpdate = true;
         }
     }
 
     void Update()
     {
+        if (receivedRobotTelemetrySinceLastUpdate)
+        {
+            receivedRobotTelemetrySinceLastUpdate = false;
+            LastRobotStateTelemetryTime = Time.time;
+        }
+
         //  Continuous command sending
         if (isHolding && !string.IsNullOrEmpty(currentCommand))
         {
@@ -213,7 +261,23 @@ public class ER9ProFullController : MonoBehaviour
     {
         isHolding = false;
         manualControl = false;
-        SendCommand("STOP_ALL");
+        currentCommand = "";
+
+        foreach (string command in StopAllCommands)
+            SendCommand(command, true);
+    }
+
+    public void PublishControlCommand(string msg)
+    {
+        if (!string.IsNullOrWhiteSpace(msg))
+            SendCommand(msg);
+    }
+
+    // FK safety integration point: this is the single live joint-angle source
+    // consumed by RobotSafetyDistanceEvaluator.
+    public float[] GetCurrentJointAnglesDegrees()
+    {
+        return new[] { a1, a2, a3, a4, a5 };
     }
 
     // =========================

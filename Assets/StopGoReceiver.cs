@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 using UnityEngine;
 using uPLibrary.Networking.M2Mqtt;
 using uPLibrary.Networking.M2Mqtt.Messages;
@@ -10,20 +11,63 @@ using uPLibrary.Networking.M2Mqtt.Messages;
 public class StopGoReceiver : MonoBehaviour
 {
     [Header("UDP Settings")]
-    public int udpPort = 5005;
+    public int udpPort = 5007;
 
     [Header("MQTT Settings")]
-    public string mqttBrokerIP = "192.168.0.190"; // <- your Pi's IP
+    public string mqttBrokerIP = "192.168.0.248"; // <- your Pi's IP
     public int mqttBrokerPort = 1883;
     public string mqttTopic = "robot/control";
+    [Tooltip("Retry MQTT connection in the background while disconnected.")]
+    public float reconnectIntervalSeconds = 2.0f;
+    [Tooltip("Forward repeated identical UDP stop/go packets only when the command changes. This prevents command spam while an upstream safety source keeps reporting the same state.")]
+    public bool publishOnlyOnCommandChange = true;
 
     public string currentCommand = "none";
+    public float LastCommandTime { get; private set; } = float.NegativeInfinity;
+    public float CommandAgeSeconds => float.IsNegativeInfinity(LastCommandTime) ? float.PositiveInfinity : Time.time - LastCommandTime;
+    public bool IsMqttConnected => mqttClient != null && mqttClient.IsConnected;
+    public string LastMqttError { get; private set; } = "";
+    public string MqttStatusText
+    {
+        get
+        {
+            if (IsMqttConnected)
+                return "connected to " + mqttBrokerIP + ":" + mqttBrokerPort + " topic " + mqttTopic;
+
+            if (Interlocked.CompareExchange(ref mqttConnecting, 0, 0) != 0)
+                return "connecting to " + mqttBrokerIP + ":" + mqttBrokerPort;
+
+            return string.IsNullOrWhiteSpace(LastMqttError)
+                ? "disconnected from " + mqttBrokerIP + ":" + mqttBrokerPort
+                : "disconnected from " + mqttBrokerIP + ":" + mqttBrokerPort + " (" + LastMqttError + ")";
+        }
+    }
+
+    private struct QueuedCommand
+    {
+        public string message;
+        public double receiveUnixMs;
+        public int bytes;
+    }
+
+    private struct MqttConnectResult
+    {
+        public double durationMs;
+        public bool success;
+        public string error;
+    }
 
     private UdpClient udpClient;
     private IPEndPoint endPoint;
-    private ConcurrentQueue<string> messageQueue = new ConcurrentQueue<string>();
+    private readonly ConcurrentQueue<QueuedCommand> messageQueue = new ConcurrentQueue<QueuedCommand>();
+    private readonly ConcurrentQueue<MqttConnectResult> mqttResults = new ConcurrentQueue<MqttConnectResult>();
 
     private MqttClient mqttClient;
+    private int mqttConnecting;
+    private volatile bool quitting;
+    private float nextReconnectTime;
+    private string lastForwardedUdpCommand = "";
+
 
     void Start()
     {
@@ -54,13 +98,15 @@ public class StopGoReceiver : MonoBehaviour
         {
             byte[] data = udpClient.EndReceive(ar, ref endPoint);
             string msg = Encoding.UTF8.GetString(data).Trim().ToLower();
-            messageQueue.Enqueue(msg);
-            Debug.Log("Received UDP message: " + msg);
+            QueuedCommand command = new QueuedCommand();
+            command.message = msg;
+            command.receiveUnixMs = RuntimeMetricsRecorder.UnixMs();
+            command.bytes = data.Length;
+            messageQueue.Enqueue(command);
             udpClient.BeginReceive(ReceiveCallback, null);
         }
-        catch (ObjectDisposedException)
-        {
-        }
+        catch (ObjectDisposedException) { }
+        catch (NullReferenceException) { }
         catch (Exception e)
         {
             Debug.LogError("UDP receive error: " + e.Message);
@@ -76,31 +122,51 @@ public class StopGoReceiver : MonoBehaviour
 
     void StartMQTT()
     {
-        try
-        {
-            mqttClient = new MqttClient(mqttBrokerIP, mqttBrokerPort, false, null, null, MqttSslProtocols.None);
-            string clientId = "UnityClient_" + Guid.NewGuid().ToString("N").Substring(0, 8);
-            mqttClient.Connect(clientId);
+        if (IsMqttConnected)
+            return;
 
-            if (mqttClient.IsConnected)
-                Debug.Log("MQTT connected to " + mqttBrokerIP + ":" + mqttBrokerPort);
-            else
-                Debug.LogError("MQTT failed to connect.");
-        }
-        catch (Exception e)
+        if (Interlocked.Exchange(ref mqttConnecting, 1) != 0) return;
+        ThreadPool.QueueUserWorkItem(_ =>
         {
-            Debug.LogError("MQTT connection error: " + e.Message);
-        }
+            long started = System.Diagnostics.Stopwatch.GetTimestamp();
+            MqttConnectResult result = new MqttConnectResult();
+            try
+            {
+                MqttClient candidate = new MqttClient(mqttBrokerIP, mqttBrokerPort, false, null, null, MqttSslProtocols.None);
+                string clientId = "UnityClient_" + Guid.NewGuid().ToString("N").Substring(0, 8);
+                candidate.Connect(clientId);
+                result.success = candidate.IsConnected;
+                if (result.success && !quitting)
+                {
+                    LastMqttError = "";
+                    mqttClient = candidate;
+                }
+                else if (candidate.IsConnected)
+                    candidate.Disconnect();
+            }
+            catch (Exception e)
+            {
+                result.error = e.Message;
+            }
+            result.durationMs = (System.Diagnostics.Stopwatch.GetTimestamp() - started) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            mqttResults.Enqueue(result);
+            Interlocked.Exchange(ref mqttConnecting, 0);
+        });
     }
 
-    void PublishMQTT(string message)
+    bool PublishMQTT(string message, double udpReceiveMs, double processMs, int inputBytes)
     {
-        if (mqttClient == null || !mqttClient.IsConnected)
+        if (!IsMqttConnected)
         {
-            Debug.LogWarning("MQTT not connected. Attempting reconnect...");
+            Debug.LogWarning("MQTT not connected. Reconnecting in background.");
             StartMQTT();
+            if (RuntimeMetricsRecorder.Instance != null)
+                RuntimeMetricsRecorder.Instance.RecordMqtt("publish_skipped", message, 0.0, udpReceiveMs, processMs, inputBytes, false);
+            return false;
         }
 
+        long started = System.Diagnostics.Stopwatch.GetTimestamp();
+        bool success = false;
         try
         {
             mqttClient.Publish(
@@ -109,39 +175,111 @@ public class StopGoReceiver : MonoBehaviour
                 MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE,
                 false
             );
+            success = true;
             Debug.Log("MQTT published: " + message + " -> " + mqttTopic);
         }
         catch (Exception e)
         {
             Debug.LogError("MQTT publish error: " + e.Message);
         }
+
+        double durationMs = (System.Diagnostics.Stopwatch.GetTimestamp() - started) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+        if (RuntimeMetricsRecorder.Instance != null)
+            RuntimeMetricsRecorder.Instance.RecordMqtt("publish", message, durationMs, udpReceiveMs, processMs, inputBytes, success);
+        return success;
+    }
+
+    public bool PublishExternalSafetyCommand(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return false;
+
+        string normalized = message.Trim().ToLowerInvariant();
+        if (normalized != "stop" && normalized != "go")
+        {
+            Debug.LogWarning("Ignoring unsupported safety command: " + message);
+            return false;
+        }
+
+        double now = RuntimeMetricsRecorder.UnixMs();
+        return PublishMQTT(normalized, now, now, 0);
+    }
+
+    public void PublishSafetyStop()
+    {
+        PublishExternalSafetyCommand("stop");
+    }
+
+    public void PublishSafetyGo()
+    {
+        PublishExternalSafetyCommand("go");
     }
 
     // ── UPDATE ───────────────────────────────────────────
 
     void Update()
     {
-        while (messageQueue.TryDequeue(out string msg))
+        MqttConnectResult connectResult;
+        while (mqttResults.TryDequeue(out connectResult))
         {
+            if (connectResult.success)
+            {
+                LastMqttError = "";
+                Debug.Log("MQTT connected to " + mqttBrokerIP + ":" + mqttBrokerPort);
+            }
+            else
+            {
+                LastMqttError = connectResult.error;
+                Debug.LogWarning("MQTT connection failed: " + connectResult.error);
+            }
+            if (RuntimeMetricsRecorder.Instance != null)
+                RuntimeMetricsRecorder.Instance.RecordMqtt("connect", mqttBrokerIP, connectResult.durationMs, 0.0, RuntimeMetricsRecorder.UnixMs(), 0, connectResult.success);
+        }
+
+        if (!quitting && !IsMqttConnected && Time.time >= nextReconnectTime)
+        {
+            nextReconnectTime = Time.time + Mathf.Max(0.25f, reconnectIntervalSeconds);
+            StartMQTT();
+        }
+
+        QueuedCommand command;
+        while (messageQueue.TryDequeue(out command))
+        {
+            double processMs = RuntimeMetricsRecorder.UnixMs();
+            string msg = command.message;
             currentCommand = msg;
+            LastCommandTime = Time.time;
 
             if (msg == "stop")
             {
                 Debug.Log("STOP received");
-                PublishMQTT("stop");
+                ForwardUdpCommandIfNeeded("stop", command.receiveUnixMs, processMs, command.bytes);
             }
             else if (msg == "go")
             {
                 Debug.Log("GO received");
-                PublishMQTT("go");
+                ForwardUdpCommandIfNeeded("go", command.receiveUnixMs, processMs, command.bytes);
             }
         }
+    }
+
+    private void ForwardUdpCommandIfNeeded(string message, double receiveMs, double processMs, int bytes)
+    {
+        if (publishOnlyOnCommandChange &&
+            string.Equals(lastForwardedUdpCommand, message, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (PublishMQTT(message, receiveMs, processMs, bytes))
+            lastForwardedUdpCommand = message;
     }
 
     // ── CLEANUP ──────────────────────────────────────────
 
     void OnApplicationQuit()
     {
+        quitting = true;
         if (udpClient != null)
         {
             udpClient.Close();

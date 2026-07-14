@@ -1,0 +1,52 @@
+# Logical column mapping for repeated-trial analysis.
+# Add project-specific aliases under each logical field when logs use different names.
+
+logical_fields:
+  timestamp: [timestamp, unix_ms, unix_time_ms, time_unix_ms, python_unix_ms, unity_unix_ms, command_timestamp, time_seconds, time_s, t, unity_receive_unix_ms]
+  frame_id: [frame_id, frame, unity_frame, unity_frame_count]
+  total_latency_ms: [total_latency_ms, software_e2e_ms, pipeline_ms, python_pipeline_ms, latency_ms]
+  pose_latency_ms: [pose_latency_ms, pose_inference_ms, inference_ms, python_pose_inference_ms, python_inference_ms]
+  robot_detection_latency_ms: [robot_detection_latency_ms, robot_detection_overlay_ms, python_robot_detection_overlay_ms]
+  marker_latency_ms: [marker_latency_ms, aruco_detection_ms, marker_anchor_ms, python_aruco_detection_ms, python_marker_anchor_ms]
+  camera_retrieval_latency_ms: [camera_retrieval_latency_ms, camera_read_ms, python_camera_read_ms, cam1_frame_age_ms, cam2_frame_age_ms]
+  triangulation_latency_ms: [triangulation_latency_ms, aruco_triangulation_ms, people_triangulation_filter_ms, stereo_match_ms, python_aruco_triangulation_ms, python_people_triangulation_filter_ms, python_stereo_match_ms]
+  distance_latency_ms: [distance_latency_ms, safety_distance_ms, python_safety_distance_ms]
+  decision_send_latency_ms: [decision_send_latency_ms, safety_decision_send_ms, udp_send_ms, python_safety_decision_send_ms, python_udp_send_ms, call_duration_ms]
+  fps: [fps, output_fps, python_output_fps]
+  safety_state: [safety_state, state, decision, current_decision]
+  stop_flag: [stop_flag, safety_stop, stop, unity_stop, is_stop]
+  release_flag: [release_flag, release, resume_flag, go_flag]
+  stale_data_flag: [stale_data, stale, data_stale, no_valid_source, missing_data]
+  data_fresh_flag: [data_fresh, robot_data_fresh, human_data_fresh]
+  min_distance_m: [min_distance_m, safety_distance_m, distance_m]
+  min_distance_px: [min_distance_px, safety_distance_px, distance_px]
+  distance: [distance]
+  distance_unit: [unit, distance_unit]
+  distance_source: [distance_source, safety_source, source]
+  command_type: [command_type, command, message]
+  command_timestamp: [command_timestamp, unix_ms, timestamp]
+  command_acknowledged: [command_acknowledged, acknowledged, ack, success]
+  command_send_latency_ms: [command_send_latency_ms, send_latency_ms, call_duration_ms, mqtt_publish_ms]
+  warning_threshold_m: [warning_threshold_m, warning_distance_m]
+  stop_threshold_m: [stop_threshold_m, stop_distance_m]
+  release_threshold_m: [release_threshold_m, release_distance_m]
+  warning_threshold_px: [warning_threshold_px, warning_distance_px]
+  stop_threshold_px: [stop_threshold_px, stop_distance_px]
+  release_threshold_px: [release_threshold_px, release_distance_px]
+
+role_files:
+  runtime: [runtime.csv, python_frames.csv, joined_frames.csv, joined_safety.csv, unity_frames.csv]
+  safety: [safety.csv, unity_safety.csv, fk_safety.csv, joined_safety.csv, runtime.csv, python_frames.csv]
+  pose: [pose.csv, python_frames.csv, runtime.csv]
+  robot_telemetry: [robot_telemetry.csv, fk_safety.csv]
+  command_log: [command_log.csv, unity_mqtt.csv]
+
+analysis:
+  stop_states: [STOP]
+  warning_states: [WARNING]
+  release_states: [RELEASE, RESUME, GO]
+  safe_states: [SAFE, RUN]
+  stale_states: [HOLD, STALE, MISSING, NO_VALID_SOURCE]
+  oscillation_window_sec: 2.0
+  threshold_margin_m: 0.05
+  threshold_margin_px: 10.0

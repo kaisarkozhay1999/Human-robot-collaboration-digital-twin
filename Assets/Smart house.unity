@@ -1877,7 +1877,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6a06f4229db2a2645845ec8938720f67, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  udpPort: 5005
+  udpPort: 5007
   mqttBrokerIP: 192.168.0.190
   mqttBrokerPort: 1883
   mqttTopic: robot/control

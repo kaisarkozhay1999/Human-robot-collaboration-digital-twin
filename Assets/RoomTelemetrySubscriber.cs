@@ -5,6 +5,8 @@ using System.Text;
 using TMPro;
 using Newtonsoft.Json;
 using System;
+using System.Collections.Concurrent;
+using System.Threading;
 
 [Serializable]
 public class RoomTelemetry
@@ -34,33 +36,36 @@ public class RoomTelemetrySubscriber : MonoBehaviour
     private bool hasNewData = false;
 
     private readonly object _lock = new object();
+    private readonly ConcurrentQueue<string> connectionMessages = new ConcurrentQueue<string>();
+    private volatile bool destroyed;
 
     void Start()
     {
-        try
+        ThreadPool.QueueUserWorkItem(_ =>
         {
-            // Create client
-            client = new MqttClient(brokerIP);
-
-            // Register callback
-            client.MqttMsgPublishReceived += OnMqttMessage;
-
-            // Unique client ID (important)
-            string clientId = "Unity_Room_" + Guid.NewGuid().ToString().Substring(0, 4);
-            client.Connect(clientId);
-
-            // Subscribe
-            client.Subscribe(
-                new string[] { topic },
-                new byte[] { MqttMsgBase.QOS_LEVEL_AT_MOST_ONCE }
-            );
-
-            Debug.Log($"<color=green>Room MQTT Connected!</color> Subscribed to: {topic}");
-        }
-        catch (Exception e)
-        {
-            Debug.LogError($"Room MQTT Connection Failed: {e.Message}");
-        }
+            try
+            {
+                MqttClient candidate = new MqttClient(brokerIP);
+                candidate.MqttMsgPublishReceived += OnMqttMessage;
+                string clientId = "Unity_Room_" + Guid.NewGuid().ToString().Substring(0, 4);
+                candidate.Connect(clientId);
+                candidate.Subscribe(
+                    new string[] { topic },
+                    new byte[] { MqttMsgBase.QOS_LEVEL_AT_MOST_ONCE }
+                );
+                if (destroyed)
+                {
+                    candidate.Disconnect();
+                    return;
+                }
+                client = candidate;
+                connectionMessages.Enqueue("connected");
+            }
+            catch (Exception e)
+            {
+                connectionMessages.Enqueue("failed:" + e.Message);
+            }
+        });
     }
 
     // Background network thread
@@ -86,6 +91,15 @@ public class RoomTelemetrySubscriber : MonoBehaviour
 
     void Update()
     {
+        string connectionMessage;
+        while (connectionMessages.TryDequeue(out connectionMessage))
+        {
+            if (connectionMessage == "connected")
+                Debug.Log("<color=green>Room MQTT Connected!</color> Subscribed to: " + topic);
+            else
+                Debug.LogWarning("Room MQTT Connection Failed: " + connectionMessage.Substring(7));
+        }
+
         if (hasNewData)
         {
             lock (_lock)
@@ -118,9 +132,8 @@ public class RoomTelemetrySubscriber : MonoBehaviour
 
     void OnDestroy()
     {
+        destroyed = true;
         if (client != null && client.IsConnected)
-        {
             client.Disconnect();
-        }
     }
 }

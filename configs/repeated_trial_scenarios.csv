@@ -1,0 +1,11 @@
+run_id,trial_id,scenario_id,scenario_name,start_time,end_time,expected_state,expected_transition,notes
+run_01,trial_01,S1,human_far_static,0.0,25.0,SAFE,no_stop,"human far from robot"
+run_01,trial_02,S2,human_approaches_robot,30.0,60.0,STOP,SAFE_WARNING_STOP,"slow approach"
+run_01,trial_03,S3,human_inside_stop_zone,65.0,83.0,STOP,STOP_HOLD,"human remains inside stop zone"
+run_01,trial_04,S4,human_moves_away_release,88.0,118.0,SAFE,STOP_RELEASE_SAFE,"human moves away after stop"
+run_01,trial_05,S5,dynamic_motion_near_boundary,123.0,168.0,WARNING,NO_RAPID_OSCILLATION,"movement near warning/stop/release boundary"
+run_01,trial_06,S6,hands_up_gesture_stop,173.0,193.0,STOP,SAFE_STOP,"hands raised"
+run_01,trial_07,S7,t_pose_or_resume_gesture,198.0,218.0,SAFE,STOP_RELEASE_SAFE,"resume gesture only after proximity is safe"
+run_01,trial_08,S8,partial_occlusion,223.0,253.0,HOLD_OR_SAFE,CONSERVATIVE_OR_FALLBACK,"partial body occlusion"
+run_01,trial_09,S9,missing_pose_or_camera_dropout,258.0,278.0,HOLD_OR_STALE,STALE_OR_MISSING_DATA,"temporarily remove pose input or one camera if safe"
+run_01,trial_10,S10,robot_motion_with_human_present,283.0,328.0,STOP,SAFE_WARNING_STOP,"robot moves while human starts safe then approaches"
