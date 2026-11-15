@@ -1,0 +1,86 @@
+{
+  "calibration": "live.npz",
+  "image_size": [
+    1280,
+    720
+  ],
+  "baseline_m": 5.389258712254614,
+  "convergence_point_cam1_m": [
+    0.142,
+    0.312,
+    2.608
+  ],
+  "axis_gap_m": 0.6851107941823008,
+  "convergence_depth_cam1_m": 2.63029581799653,
+  "convergence_depth_cam2_m": 4.216193283330658,
+  "n_pairs": 20000,
+  "sweep": [
+    {
+      "sigma_px": 0.5,
+      "point_error_rms_m": 0.0022403329524320354,
+      "point_error_p95_m": 0.0037371051363401693,
+      "distance_error_sd_m": 0.0018726868992555276,
+      "distance_error_abs_p95_m": 0.003699782736702915,
+      "share_abs_error_gt_0p075": 0.0,
+      "share_abs_error_gt_0p15": 0.0,
+      "p_est_le_0p75_given_true_0p90": 0.0,
+      "p_est_ge_0p90_given_true_0p60": 0.0
+    },
+    {
+      "sigma_px": 1,
+      "point_error_rms_m": 0.004468583970184409,
+      "point_error_p95_m": 0.007446077400639109,
+      "distance_error_sd_m": 0.0036979805552140193,
+      "distance_error_abs_p95_m": 0.007285181592075234,
+      "share_abs_error_gt_0p075": 0.0,
+      "share_abs_error_gt_0p15": 0.0,
+      "p_est_le_0p75_given_true_0p90": 0.0,
+      "p_est_ge_0p90_given_true_0p60": 0.0
+    },
+    {
+      "sigma_px": 2,
+      "point_error_rms_m": 0.00898909603031277,
+      "point_error_p95_m": 0.014974990321516965,
+      "distance_error_sd_m": 0.007370706107440452,
+      "distance_error_abs_p95_m": 0.014494161326737913,
+      "share_abs_error_gt_0p075": 0.0,
+      "share_abs_error_gt_0p15": 0.0,
+      "p_est_le_0p75_given_true_0p90": 0.0,
+      "p_est_ge_0p90_given_true_0p60": 0.0
+    },
+    {
+      "sigma_px": 4,
+      "point_error_rms_m": 0.017912913992558146,
+      "point_error_p95_m": 0.029698555485316476,
+      "distance_error_sd_m": 0.014748150088654361,
+      "distance_error_abs_p95_m": 0.02915147882851515,
+      "share_abs_error_gt_0p075": 0.0,
+      "share_abs_error_gt_0p15": 0.0,
+      "p_est_le_0p75_given_true_0p90": 0.0,
+      "p_est_ge_0p90_given_true_0p60": 0.0
+    },
+    {
+      "sigma_px": 8,
+      "point_error_rms_m": 0.03573160525254477,
+      "point_error_p95_m": 0.05970362534064086,
+      "distance_error_sd_m": 0.029694914147328045,
+      "distance_error_abs_p95_m": 0.05895272485228174,
+      "share_abs_error_gt_0p075": 0.01455,
+      "share_abs_error_gt_0p15": 0.0,
+      "p_est_le_0p75_given_true_0p90": 0.0,
+      "p_est_ge_0p90_given_true_0p60": 0.0
+    },
+    {
+      "sigma_px": 16,
+      "point_error_rms_m": 0.07150548593638209,
+      "point_error_p95_m": 0.11877731232985529,
+      "distance_error_sd_m": 0.05855449480388477,
+      "distance_error_abs_p95_m": 0.11686630850675332,
+      "share_abs_error_gt_0p075": 0.19265,
+      "share_abs_error_gt_0p15": 0.0137,
+      "p_est_le_0p75_given_true_0p90": 0.00615,
+      "p_est_ge_0p90_given_true_0p60": 0.0
+    }
+  ],
+  "depth_cam1_median_m": 2.9347108906072865
+}

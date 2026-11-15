@@ -1,0 +1,85 @@
+{
+  "resend_s": 0.25,
+  "tau_s": 0.5,
+  "burst_mean_messages": 4.0,
+  "rows": [
+    {
+      "loss_rate": 0.0,
+      "independent": {
+        "stale_time_share": 0.0,
+        "stop_delay_mean_s": 0.0,
+        "stop_delay_p95_s": 0.0
+      },
+      "bursty": {
+        "stale_time_share": 0.0,
+        "stop_delay_mean_s": 0.0,
+        "stop_delay_p95_s": 0.0
+      }
+    },
+    {
+      "loss_rate": 0.01,
+      "independent": {
+        "stale_time_share": 0.0001,
+        "stop_delay_mean_s": 0.00254,
+        "stop_delay_p95_s": 0.0
+      },
+      "bursty": {
+        "stale_time_share": 0.00763,
+        "stop_delay_mean_s": 0.0094,
+        "stop_delay_p95_s": 0.0
+      }
+    },
+    {
+      "loss_rate": 0.05,
+      "independent": {
+        "stale_time_share": 0.0025,
+        "stop_delay_mean_s": 0.013175,
+        "stop_delay_p95_s": 0.25
+      },
+      "bursty": {
+        "stale_time_share": 0.03755,
+        "stop_delay_mean_s": 0.04822,
+        "stop_delay_p95_s": 0.0
+      }
+    },
+    {
+      "loss_rate": 0.1,
+      "independent": {
+        "stale_time_share": 0.010135,
+        "stop_delay_mean_s": 0.02763,
+        "stop_delay_p95_s": 0.25
+      },
+      "bursty": {
+        "stale_time_share": 0.07516,
+        "stop_delay_mean_s": 0.09315,
+        "stop_delay_p95_s": 0.75
+      }
+    },
+    {
+      "loss_rate": 0.2,
+      "independent": {
+        "stale_time_share": 0.04006,
+        "stop_delay_mean_s": 0.063345,
+        "stop_delay_p95_s": 0.25
+      },
+      "bursty": {
+        "stale_time_share": 0.14893,
+        "stop_delay_mean_s": 0.202035,
+        "stop_delay_p95_s": 1.25
+      }
+    },
+    {
+      "loss_rate": 0.3,
+      "independent": {
+        "stale_time_share": 0.090445,
+        "stop_delay_mean_s": 0.10744,
+        "stop_delay_p95_s": 0.5
+      },
+      "bursty": {
+        "stale_time_share": 0.224555,
+        "stop_delay_mean_s": 0.293515,
+        "stop_delay_p95_s": 1.75
+      }
+    }
+  ]
+}
